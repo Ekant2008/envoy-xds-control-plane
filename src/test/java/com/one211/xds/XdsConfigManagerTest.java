@@ -62,7 +62,7 @@ class XdsConfigManagerTest {
 
         assertNotNull(listeners, "Listeners should not be null");
         assertFalse(listeners.isEmpty(), "Listeners should not be empty");
-        assertTrue(listeners.size() >= 7, "Should have at least 7 listeners");
+        assertTrue(listeners.size() >= 6, "Should have at least 6 listeners");
     }
 
     @Test
@@ -88,8 +88,7 @@ class XdsConfigManagerTest {
         List<Listener> listeners = (List<Listener>) method.invoke(configManager);
 
         String[] expectedTcpListeners = {
-                "flight_listener_1",
-                "flight_listener_2",
+                "flight_listener_controllers",
                 "flight_listener_ollylake",
                 "tcp_backend_database",
                 "tcp_cluster_database"
@@ -156,7 +155,7 @@ class XdsConfigManagerTest {
         List<VirtualHost> virtualHosts = (List<VirtualHost>) method.invoke(configManager);
 
         assertNotNull(virtualHosts, "Virtual hosts should not be null");
-        assertEquals(7, virtualHosts.size(), "Should have 7 virtual hosts");
+        assertEquals(5, virtualHosts.size(), "Should have 5 virtual hosts (controller1_host and controller2_host removed - now managed dynamically)");
     }
 
     @Test
@@ -181,10 +180,9 @@ class XdsConfigManagerTest {
         @SuppressWarnings("unchecked")
         List<VirtualHost> virtualHosts = (List<VirtualHost>) method.invoke(configManager);
 
+        // Controller1_host and controller2_host removed - now managed dynamically via /api/routes
         String[] expectedHosts = {
-                "controller_lb_host",
-                "controller1_host",
-                "controller2_host"
+                "controller_lb_host"
         };
 
         for (String expectedName : expectedHosts) {
@@ -192,6 +190,12 @@ class XdsConfigManagerTest {
                     .anyMatch(vh -> expectedName.equals(vh.getName()));
             assertTrue(exists, "Should have " + expectedName + " virtual host");
         }
+
+        // Verify controller1_host and controller2_host do NOT exist
+        assertFalse(virtualHosts.stream().anyMatch(vh -> "controller1_host".equals(vh.getName())),
+                "Should NOT have controller1_host (now managed dynamically)");
+        assertFalse(virtualHosts.stream().anyMatch(vh -> "controller2_host".equals(vh.getName())),
+                "Should NOT have controller2_host (now managed dynamically)");
     }
 
     @Test
@@ -219,10 +223,7 @@ class XdsConfigManagerTest {
                 "backend_http",
                 "frontend_http",
                 "sql_controller_lb_http",
-                "sql_controller1_http",
-                "sql_controller2_http",
-                "controller1_flight_cluster",
-                "controller2_flight_cluster",
+                "controller_flight_cluster",
                 "ollylake_http",
                 "backend_database_tcp",
                 "cluster_database_tcp"
@@ -255,12 +256,10 @@ class XdsConfigManagerTest {
         @SuppressWarnings("unchecked")
         List<ClusterLoadAssignment> endpoints = (List<ClusterLoadAssignment>) method.invoke(configManager);
 
+        // ollylake_flight_cluster endpoint removed - EDS-type clusters get endpoints dynamically via xDS
         String[] expectedEndpoints = {
-                "sql_controller_lb_http",
-                "sql_controller1_http",
-                "sql_controller2_http",
-                "controller1_flight_cluster",
-                "controller2_flight_cluster"
+                "backend_database_tcp",
+                "cluster_database_tcp"
         };
 
         for (String expectedName : expectedEndpoints) {
@@ -268,6 +267,13 @@ class XdsConfigManagerTest {
                     .anyMatch(e -> expectedName.equals(e.getClusterName()));
             assertTrue(exists, "Should have " + expectedName + " endpoint");
         }
+
+        // Verify ollylake_flight_cluster does NOT have static endpoints (EDS-type cluster)
+        assertFalse(endpoints.stream().anyMatch(e -> "ollylake_flight_cluster".equals(e.getClusterName())),
+                "Should NOT have ollylake_flight_cluster static endpoint (EDS-type, managed dynamically)");
+        // Verify controller_flight_cluster does NOT have static endpoints (EDS-type cluster)
+        assertFalse(endpoints.stream().anyMatch(e -> "controller_flight_cluster".equals(e.getClusterName())),
+                "Should NOT have controller_flight_cluster static endpoint (EDS-type, managed dynamically)");
     }
 
     @Test
