@@ -386,6 +386,93 @@ public class XdsControlPlaneApplication {
         });
         routeTemplateContext.getFilters().add(new AuthenticationFilter(userStore, requireAuthentication));
 
+
+        // Controller registration endpoint (protected)
+        com.sun.net.httpserver.HttpContext registerContext = httpServer.createContext("/api/controllers/register", exchange -> {
+            if ("POST".equals(exchange.getRequestMethod())) {
+                try {
+                    String username = exchange.getRequestHeaders().getFirst("X-User");
+                    logger.info("Controller registration requested by user: {}", username);
+
+                    String requestBody = new String(exchange.getRequestBody().readAllBytes());
+                    configManager.registerController(requestBody);
+                    Snapshot snapshot = configManager.generateInitialSnapshot();
+                    cache.setSnapshot(nodeId, snapshot);
+
+                    String response = "{\"status\":\"ok\",\"message\":\"Controller registered successfully\"}";
+                    byte[] responseBytes = response.getBytes();
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(200, responseBytes.length);
+                    exchange.getResponseBody().write(responseBytes);
+                    exchange.getResponseBody().close();
+                } catch (Exception e) {
+                    logger.error("Failed to register controller", e);
+                    String errorResponse = "{\"error\":\"" + e.getMessage() + "\"}";
+                    byte[] errorBytes = errorResponse.getBytes();
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(500, errorBytes.length);
+                    exchange.getResponseBody().write(errorBytes);
+                    exchange.getResponseBody().close();
+                }
+            } else {
+                String errorResponse = "{\"error\":\"Method not allowed\"}";
+                byte[] errorBytes = errorResponse.getBytes();
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(405, errorBytes.length);
+                exchange.getResponseBody().write(errorBytes);
+                exchange.getResponseBody().close();
+            }
+        });
+        registerContext.getFilters().add(new AuthenticationFilter(userStore, requireAuthentication));
+
+        // Controller deregistration endpoint (protected)
+        com.sun.net.httpserver.HttpContext deregisterContext = httpServer.createContext("/api/controllers/deregister", exchange -> {
+            if ("DELETE".equals(exchange.getRequestMethod())) {
+                try {
+                    String username = exchange.getRequestHeaders().getFirst("X-User");
+                    logger.info("Controller deregistration requested by user: {}", username);
+
+                    // Parse request body: {"domain": "controller3.one211.com", "host": "controller3"}
+                    String requestBody = new String(exchange.getRequestBody().readAllBytes());
+                    com.fasterxml.jackson.databind.JsonNode jsonNode = jsonMapper.readTree(requestBody);
+                    String domain = jsonNode.has("domain") ? jsonNode.get("domain").asText() : null;
+                    String host = jsonNode.has("host") ? jsonNode.get("host").asText() : null;
+
+                    if (domain == null || host == null) {
+                        throw new IllegalArgumentException("Both domain and host are required");
+                    }
+
+                    configManager.deregisterController(domain, host);
+                    Snapshot snapshot = configManager.generateInitialSnapshot();
+                    cache.setSnapshot(nodeId, snapshot);
+
+                    String response = "{\"status\":\"ok\",\"message\":\"Controller deregistered successfully\"}";
+                    byte[] responseBytes = response.getBytes();
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(200, responseBytes.length);
+                    exchange.getResponseBody().write(responseBytes);
+                    exchange.getResponseBody().close();
+                } catch (Exception e) {
+                    logger.error("Failed to deregister controller", e);
+                    String errorResponse = "{\"error\":\"" + e.getMessage() + "\"}";
+                    byte[] errorBytes = errorResponse.getBytes();
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(500, errorBytes.length);
+                    exchange.getResponseBody().write(errorBytes);
+                    exchange.getResponseBody().close();
+                }
+            } else {
+                String errorResponse = "{\"error\":\"Method not allowed\"}";
+                byte[] errorBytes = errorResponse.getBytes();
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(405, errorBytes.length);
+                exchange.getResponseBody().write(errorBytes);
+                exchange.getResponseBody().close();
+            }
+        });
+        deregisterContext.getFilters().add(new AuthenticationFilter(userStore, requireAuthentication));
+
+
         httpServer.setExecutor(executorService);
         httpServer.start();
         logger.info("HTTP management server started on port {}", HTTP_PORT);

@@ -13,8 +13,7 @@ public class XdsConfig {
     public static final int MINIO_S3_API_PORT;
 
     // Arrow Flight SQL ports
-    public static final int FLIGHT_PORT_CONTROLLER1;
-    public static final int FLIGHT_PORT_CONTROLLER2;
+    public static final int FLIGHT_PORT_CONTROLLERS;
     public static final int FLIGHT_PORT_OLLYLAKE;
 
     // PostgreSQL ports
@@ -27,8 +26,6 @@ public class XdsConfig {
     public static final int SERVICE_PORT_MINIO_API;
     public static final int SERVICE_PORT_MINIO_CONSOLE;
     public static final int SERVICE_PORT_OLLYLAKE_HTTP;
-    public static final int SERVICE_PORT_SQL_CONTROLLER1;
-    public static final int SERVICE_PORT_SQL_CONTROLLER2;
 
     // Timeouts (in seconds)
     public static final int TIMEOUT_API_SHORT;
@@ -52,8 +49,7 @@ public class XdsConfig {
 
         // Arrow Flight SQL ports
         Config flightPorts = xdsConfig.getConfig("flight-ports");
-        FLIGHT_PORT_CONTROLLER1 = flightPorts.getInt("controller1");
-        FLIGHT_PORT_CONTROLLER2 = flightPorts.getInt("controller2");
+        FLIGHT_PORT_CONTROLLERS = flightPorts.getInt("controllers");
         FLIGHT_PORT_OLLYLAKE = flightPorts.getInt("ollylake");
 
         // PostgreSQL ports
@@ -68,8 +64,6 @@ public class XdsConfig {
         SERVICE_PORT_MINIO_API = services.getInt("minio-api");
         SERVICE_PORT_MINIO_CONSOLE = services.getInt("minio-console");
         SERVICE_PORT_OLLYLAKE_HTTP = services.getInt("ollylake-http");
-        SERVICE_PORT_SQL_CONTROLLER1 = services.getInt("sql-controller1");
-        SERVICE_PORT_SQL_CONTROLLER2 = services.getInt("sql-controller2");
 
         // Timeouts
         Config timeouts = xdsConfig.getConfig("timeouts");

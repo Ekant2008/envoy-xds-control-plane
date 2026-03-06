@@ -136,8 +136,7 @@ public class XdsConfigManager {
                 .build());
 
         // TCP Listeners for Arrow Flight SQL
-        listeners.add(generateTcpListener("flight_listener_1", XdsConfig.FLIGHT_PORT_CONTROLLER1, "controller1_flight_cluster"));
-        listeners.add(generateTcpListener("flight_listener_2", XdsConfig.FLIGHT_PORT_CONTROLLER2, "controller2_flight_cluster"));
+        listeners.add(generateTcpListener("flight_listener_controllers", XdsConfig.FLIGHT_PORT_CONTROLLERS, "controller_flight_cluster"));
         listeners.add(generateTcpListener("flight_listener_ollylake", XdsConfig.FLIGHT_PORT_OLLYLAKE, "ollylake_flight_cluster"));
 
         // TCP Listeners for PostgreSQL
@@ -286,95 +285,8 @@ public class XdsConfigManager {
                         .build())
                 .build());
 
-        // Controller 1 host
-        virtualHosts.add(VirtualHost.newBuilder()
-                .setName("controller1_host")
-                .addDomains("controller1.one211.com")
-                .addDomains("controller1.one211.com:*")
-                .addRoutes(Route.newBuilder()
-                        .setMatch(RouteMatch.newBuilder()
-                                .setPrefix("/")
-                                .addHeaders(HeaderMatcher.newBuilder()
-                                        .setName(":method")
-                                        .setStringMatch(StringMatcher.newBuilder().setExact("OPTIONS").build())
-                                        .build())
-                                .build())
-                        .setDirectResponse(DirectResponseAction.newBuilder().setStatus(204).build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Origin").setValue("https://dazzleduck-ui.netlify.app").build())
-                                .build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Methods").setValue("GET, POST, PUT, DELETE, OPTIONS, PATCH").build())
-                                .build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Headers").setValue("Authorization, Content-Type").build())
-                                .build())
-                        .build())
-                .addRoutes(Route.newBuilder()
-                        .setMatch(RouteMatch.newBuilder().setPrefix("/").build())
-                        .setRoute(RouteAction.newBuilder()
-                                .setCluster("sql_controller1_http")
-                                .setTimeout(Duration.newBuilder().setSeconds(XdsConfig.TIMEOUT_API_LONG).build())
-                                .build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setAppendAction(HeaderValueOption.HeaderAppendAction.OVERWRITE_IF_EXISTS_OR_ADD)
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Origin").setValue("https://dazzleduck-ui.netlify.app").build())
-                                .build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setAppendAction(HeaderValueOption.HeaderAppendAction.OVERWRITE_IF_EXISTS_OR_ADD)
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Methods").setValue("GET, POST, PUT, DELETE, OPTIONS, PATCH").build())
-                                .build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setAppendAction(HeaderValueOption.HeaderAppendAction.OVERWRITE_IF_EXISTS_OR_ADD)
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Headers").setValue("Authorization, Content-Type").build())
-                                .build())
-                        .build())
-                .build());
-
-        // Controller 2 host
-        virtualHosts.add(VirtualHost.newBuilder()
-                .setName("controller2_host")
-                .addDomains("controller2.one211.com")
-                .addDomains("controller2.one211.com:*")
-                .addRoutes(Route.newBuilder()
-                        .setMatch(RouteMatch.newBuilder()
-                                .setPrefix("/")
-                                .addHeaders(HeaderMatcher.newBuilder()
-                                        .setName(":method")
-                                        .setStringMatch(StringMatcher.newBuilder().setExact("OPTIONS").build())
-                                        .build())
-                                .build())
-                        .setDirectResponse(DirectResponseAction.newBuilder().setStatus(204).build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Origin").setValue("https://dazzleduck-ui.netlify.app").build())
-                                .build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Methods").setValue("GET, POST, PUT, DELETE, OPTIONS, PATCH").build())
-                                .build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Headers").setValue("Authorization, Content-Type").build())
-                                .build())
-                        .build())
-                .addRoutes(Route.newBuilder()
-                        .setMatch(RouteMatch.newBuilder().setPrefix("/").build())
-                        .setRoute(RouteAction.newBuilder()
-                                .setCluster("sql_controller2_http")
-                                .setTimeout(Duration.newBuilder().setSeconds(XdsConfig.TIMEOUT_API_LONG).build())
-                                .build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setAppendAction(HeaderValueOption.HeaderAppendAction.OVERWRITE_IF_EXISTS_OR_ADD)
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Origin").setValue("https://dazzleduck-ui.netlify.app").build())
-                                .build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setAppendAction(HeaderValueOption.HeaderAppendAction.OVERWRITE_IF_EXISTS_OR_ADD)
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Methods").setValue("GET, POST, PUT, DELETE, OPTIONS, PATCH").build())
-                                .build())
-                        .addResponseHeadersToAdd(HeaderValueOption.newBuilder()
-                                .setAppendAction(HeaderValueOption.HeaderAppendAction.OVERWRITE_IF_EXISTS_OR_ADD)
-                                .setHeader(HeaderValue.newBuilder().setKey("Access-Control-Allow-Headers").setValue("Authorization, Content-Type").build())
-                                .build())
-                        .build())
-                .build());
+        // Controller routes are now managed dynamically via ServiceRegistry
+        // Use the /api/routes endpoints to add controller routes at runtime
 
         // MinIO console host
         virtualHosts.add(VirtualHost.newBuilder()
@@ -518,7 +430,7 @@ public class XdsConfigManager {
         // OllyLake HTTP
         clusters.add(createHttpCluster("ollylake_http", "ollylake", XdsConfig.SERVICE_PORT_OLLYLAKE_HTTP));
 
-        // Controller Load Balancer - will have endpoints updated dynamically
+        // Controller Load Balancer - endpoints populated from ServiceRegistry
         clusters.add(Cluster.newBuilder()
                 .setName("sql_controller_lb_http")
                 .setType(Cluster.DiscoveryType.STRICT_DNS)
@@ -526,25 +438,7 @@ public class XdsConfigManager {
                 .setConnectTimeout(Duration.newBuilder().setSeconds(XdsConfig.TIMEOUT_TCP_CONNECT).build())
                 .build());
 
-        // Controller 1 HTTP - will have endpoints updated dynamically
-        clusters.add(Cluster.newBuilder()
-                .setName("sql_controller1_http")
-                .setType(Cluster.DiscoveryType.STRICT_DNS)
-                .setLbPolicy(Cluster.LbPolicy.ROUND_ROBIN)
-                .setConnectTimeout(Duration.newBuilder().setSeconds(XdsConfig.TIMEOUT_TCP_CONNECT).build())
-                .build());
-
-        // Controller 2 HTTP - will have endpoints updated dynamically
-        clusters.add(Cluster.newBuilder()
-                .setName("sql_controller2_http")
-                .setType(Cluster.DiscoveryType.STRICT_DNS)
-                .setLbPolicy(Cluster.LbPolicy.ROUND_ROBIN)
-                .setConnectTimeout(Duration.newBuilder().setSeconds(XdsConfig.TIMEOUT_TCP_CONNECT).build())
-                .build());
-
-        // TCP Clusters - will have endpoints updated dynamically
-        clusters.add(createTcpCluster("controller1_flight_cluster"));
-        clusters.add(createTcpCluster("controller2_flight_cluster"));
+        clusters.add(createTcpCluster("controller_flight_cluster"));
         clusters.add(createTcpCluster("ollylake_flight_cluster"));
         clusters.add(createTcpCluster("backend_database_tcp"));
         clusters.add(createTcpCluster("cluster_database_tcp"));
@@ -602,118 +496,7 @@ public class XdsConfigManager {
      */
     private List<ClusterLoadAssignment> generateEndpoints() {
         List<ClusterLoadAssignment> endpoints = new ArrayList<>();
-
-        // Controller Load Balancer Endpoints
-        endpoints.add(ClusterLoadAssignment.newBuilder()
-                .setClusterName("sql_controller_lb_http")
-                .addEndpoints(LocalityLbEndpoints.newBuilder()
-                        .addLbEndpoints(LbEndpoint.newBuilder()
-                                .setEndpoint(Endpoint.newBuilder()
-                                        .setAddress(Address.newBuilder()
-                                                .setSocketAddress(SocketAddress.newBuilder()
-                                                        .setAddress("sql-controller1")
-                                                        .setPortValue(9006)
-                                                        .build())
-                                                .build())
-                                        .build())
-                                .build())
-                        .addLbEndpoints(LbEndpoint.newBuilder()
-                                .setEndpoint(Endpoint.newBuilder()
-                                        .setAddress(Address.newBuilder()
-                                                .setSocketAddress(SocketAddress.newBuilder()
-                                                        .setAddress("sql-controller2")
-                                                        .setPortValue(9007)
-                                                        .build())
-                                                .build())
-                                        .build())
-                                .build())
-                        .build())
-                .build());
-
-        // Controller 1 HTTP Endpoints
-        endpoints.add(ClusterLoadAssignment.newBuilder()
-                .setClusterName("sql_controller1_http")
-                .addEndpoints(LocalityLbEndpoints.newBuilder()
-                        .addLbEndpoints(LbEndpoint.newBuilder()
-                                .setEndpoint(Endpoint.newBuilder()
-                                        .setAddress(Address.newBuilder()
-                                                .setSocketAddress(SocketAddress.newBuilder()
-                                                        .setAddress("sql-controller1")
-                                                        .setPortValue(9006)
-                                                        .build())
-                                                .build())
-                                        .build())
-                                .build())
-                        .build())
-                .build());
-
-        // Controller 2 HTTP Endpoints
-        endpoints.add(ClusterLoadAssignment.newBuilder()
-                .setClusterName("sql_controller2_http")
-                .addEndpoints(LocalityLbEndpoints.newBuilder()
-                        .addLbEndpoints(LbEndpoint.newBuilder()
-                                .setEndpoint(Endpoint.newBuilder()
-                                        .setAddress(Address.newBuilder()
-                                                .setSocketAddress(SocketAddress.newBuilder()
-                                                        .setAddress("sql-controller2")
-                                                        .setPortValue(9007)
-                                                        .build())
-                                                .build())
-                                        .build())
-                                .build())
-                        .build())
-                .build());
-
-        // Flight Controller 1 Endpoints
-        endpoints.add(ClusterLoadAssignment.newBuilder()
-                .setClusterName("controller1_flight_cluster")
-                .addEndpoints(LocalityLbEndpoints.newBuilder()
-                        .addLbEndpoints(LbEndpoint.newBuilder()
-                                .setEndpoint(Endpoint.newBuilder()
-                                        .setAddress(Address.newBuilder()
-                                                .setSocketAddress(SocketAddress.newBuilder()
-                                                        .setAddress("sql-controller1")
-                                                        .setPortValue(59307)
-                                                        .build())
-                                                .build())
-                                        .build())
-                                .build())
-                        .build())
-                .build());
-
-        // Flight Controller 2 Endpoints
-        endpoints.add(ClusterLoadAssignment.newBuilder()
-                .setClusterName("controller2_flight_cluster")
-                .addEndpoints(LocalityLbEndpoints.newBuilder()
-                        .addLbEndpoints(LbEndpoint.newBuilder()
-                                .setEndpoint(Endpoint.newBuilder()
-                                        .setAddress(Address.newBuilder()
-                                                .setSocketAddress(SocketAddress.newBuilder()
-                                                        .setAddress("sql-controller2")
-                                                        .setPortValue(59301)
-                                                        .build())
-                                                .build())
-                                        .build())
-                                .build())
-                        .build())
-                .build());
-
-        // Flight OllyLake Endpoints
-        endpoints.add(ClusterLoadAssignment.newBuilder()
-                .setClusterName("ollylake_flight_cluster")
-                .addEndpoints(LocalityLbEndpoints.newBuilder()
-                        .addLbEndpoints(LbEndpoint.newBuilder()
-                                .setEndpoint(Endpoint.newBuilder()
-                                        .setAddress(Address.newBuilder()
-                                                .setSocketAddress(SocketAddress.newBuilder()
-                                                        .setAddress("ollylake")
-                                                        .setPortValue(59305)
-                                                        .build())
-                                                .build())
-                                        .build())
-                                .build())
-                        .build())
-                .build());
+        // Controller endpoints are populated from ServiceRegistry via dynamicEndpoints
 
         // Database Endpoints
         endpoints.add(ClusterLoadAssignment.newBuilder()
@@ -951,6 +734,155 @@ public class XdsConfigManager {
     /**
      * Initialize default route templates
      */
+
+    /**
+     * Registers a new controller with both HTTP and Flight endpoints
+     * This is the simplified API for adding new controllers dynamically
+     *
+     * @param controllerConfig JSON string with controller configuration
+     *                        Format: {"domain": "controller3.one211.com", "host": "controller3", "httpPort": 9008, "flightPort": 59308}
+     * @throws IOException if configuration parsing fails
+     */
+    public void registerController(String controllerConfig) throws IOException {
+        logger.info("Registering controller: {}", controllerConfig);
+
+        try {
+            ControllerRegistrationRequest request = jsonMapper.readValue(controllerConfig, ControllerRegistrationRequest.class);
+            logger.info("Parsed controller registration: domain={}, host={}, httpPort={}, flightPort={}",
+                request.domain(), request.host(), request.httpPort(), request.flightPort());
+
+            // Validate required fields
+            if (request.domain() == null || request.domain().trim().isEmpty()) {
+                throw new IllegalArgumentException("Domain is required");
+            }
+            if (request.host() == null || request.host().trim().isEmpty()) {
+                throw new IllegalArgumentException("Host is required");
+            }
+
+            String domain = request.domain().trim();
+            String host = request.host().trim();
+            int httpPort = request.httpPort() != null ? request.httpPort() : 9006;
+            int flightPort = request.flightPort() != null ? request.flightPort() : 59307;
+
+            // 1. Add/update route for this controller domain
+            addRouteForController(domain);
+            logger.info("Added route for domain: {}", domain);
+
+            // 2. Add HTTP endpoint to sql_controller_lb_http cluster
+            addEndpointToCluster("sql_controller_lb_http", host, httpPort);
+            logger.info("Added HTTP endpoint for {}:{} to sql_controller_lb_http", host, httpPort);
+
+            // 3. Add Flight endpoint to controller_flight_cluster
+            addEndpointToCluster("controller_flight_cluster", host, flightPort);
+            logger.info("Added Flight endpoint for {}:{} to controller_flight_cluster", host, flightPort);
+
+            // Update configuration timestamp to trigger snapshot refresh
+            updateConfigurationTimestamp();
+
+        } catch (Exception e) {
+            logger.error("Failed to register controller", e);
+            throw new IOException("Failed to register controller: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Adds a route for a controller domain
+     *
+     * @param domain the controller domain
+     * @throws IOException if route addition fails
+     */
+    private void addRouteForController(String domain) throws IOException {
+        RouteConfig config = new RouteConfig(
+            domain,
+            "sql_controller_lb_http",
+            "/",
+            50
+        );
+        dynamicRoutes.put(domain, config);
+    }
+
+    /**
+     * Adds an endpoint to a cluster (adds to existing list or creates new one)
+     *
+     * @param clusterName the cluster name
+     * @param host the endpoint host
+     * @param port the endpoint port
+     */
+    private void addEndpointToCluster(String clusterName, String host, int port) {
+        List<EndpointConfig> endpoints = dynamicEndpoints.getOrDefault(clusterName, new ArrayList<>());
+        
+        // Check if this endpoint already exists, if so update its port
+        boolean found = false;
+        List<EndpointConfig> updated = new ArrayList<>();
+        for (EndpointConfig ep : endpoints) {
+            if (ep.getHost().equals(host)) {
+                updated.add(new EndpointConfig(clusterName, host, port));
+                found = true;
+            } else {
+                updated.add(ep);
+            }
+        }
+        
+        if (!found) {
+            updated.add(new EndpointConfig(clusterName, host, port));
+        }
+        
+        dynamicEndpoints.put(clusterName, updated);
+    }
+
+    /**
+     * Deregisters a controller (removes its endpoints and route)
+     *
+     * @param domain the controller domain to deregister
+     * @param host the controller host to remove
+     */
+    public void deregisterController(String domain, String host) {
+        logger.info("Deregistering controller: domain={}, host={}", domain, host);
+
+        // Remove the route
+        RouteConfig removed = dynamicRoutes.remove(domain);
+        if (removed != null) {
+            logger.info("Removed route for domain: {}", domain);
+        }
+
+        // Remove HTTP endpoint
+        removeEndpointFromCluster("sql_controller_lb_http", host);
+        
+        // Remove Flight endpoint
+        removeEndpointFromCluster("controller_flight_cluster", host);
+
+        updateConfigurationTimestamp();
+        logger.info("Deregistered controller: domain={}, host={}", domain, host);
+    }
+
+    /**
+     * Removes an endpoint from a cluster
+     *
+     * @param clusterName the cluster name
+     * @param host the endpoint host to remove
+     */
+    private void removeEndpointFromCluster(String clusterName, String host) {
+        List<EndpointConfig> endpoints = dynamicEndpoints.get(clusterName);
+        if (endpoints != null) {
+            List<EndpointConfig> filtered = endpoints.stream()
+                .filter(ep -> !ep.getHost().equals(host))
+                .collect(Collectors.toList());
+            
+            if (filtered.isEmpty()) {
+                dynamicEndpoints.remove(clusterName);
+            } else {
+                dynamicEndpoints.put(clusterName, filtered);
+            }
+        }
+    }
+
+    /**
+     * Inner class for parsing controller registration requests
+     */
+    private record ControllerRegistrationRequest(String domain, String host, Integer httpPort, Integer flightPort) {
+    }
+
+
     private void initializeRouteTemplates() {
         // Template for controller subdomains
         routeTemplates.put("controller", new RouteTemplate(
