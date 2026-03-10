@@ -183,7 +183,7 @@ public class ConfigLoaderTest {
     void testGetCacheNodeId() {
         String nodeId = ConfigLoader.getCacheNodeId();
         assertNotNull(nodeId, "Cache node ID should not be null");
-        assertEquals("test-node", nodeId, "Default node ID should be 'test-node'");
+        assertEquals("envoy-gateway", nodeId, "Default node ID should be .envoy-gateway.");
     }
 
     @Test

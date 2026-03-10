@@ -5,6 +5,10 @@ import com.typesafe.config.Config;
 /**
  * Configuration values for xDS resources
  * Centralizes all magic numbers from XdsConfigManager
+ *
+ * Controller topology (hosts, ports, instances) is NOT defined here.
+ * Controllers register dynamically via the ServiceRegistry (/api/controllers/register).
+ * Only infrastructure constants (ports Envoy listens on, timeouts, auth) belong here.
  */
 public class XdsConfig {
 
@@ -13,8 +17,7 @@ public class XdsConfig {
     public static final int MINIO_S3_API_PORT;
 
     // Arrow Flight SQL ports (exposed on Envoy)
-    public static final int FLIGHT_PORT_CONTROLLER1;
-    public static final int FLIGHT_PORT_CONTROLLER2;
+    public static final int FLIGHT_PORT_CONTROLLERS;
     public static final int FLIGHT_PORT_OLLYLAKE;
 
     // PostgreSQL ports (exposed on Envoy)
@@ -27,10 +30,6 @@ public class XdsConfig {
     public static final int SERVICE_PORT_MINIO_API;
     public static final int SERVICE_PORT_MINIO_CONSOLE;
     public static final int SERVICE_PORT_OLLYLAKE_HTTP;
-    public static final int SERVICE_PORT_CONTROLLER1_HTTP;
-    public static final int SERVICE_PORT_CONTROLLER2_HTTP;
-    public static final int SERVICE_PORT_CONTROLLER1_FLIGHT;
-    public static final int SERVICE_PORT_CONTROLLER2_FLIGHT;
     public static final int SERVICE_PORT_OLLYLAKE_FLIGHT;
     public static final int SERVICE_PORT_DATABASE;
 
@@ -39,8 +38,6 @@ public class XdsConfig {
     public static final String HOST_FRONTEND;
     public static final String HOST_MINIO;
     public static final String HOST_OLLYLAKE;
-    public static final String HOST_CONTROLLER1;
-    public static final String HOST_CONTROLLER2;
     public static final String HOST_BACKEND_DATABASE;
     public static final String HOST_CLUSTER_DATABASE;
 
@@ -73,8 +70,7 @@ public class XdsConfig {
 
         // Arrow Flight SQL ports
         Config flightPorts = xdsConfig.getConfig("flight-ports");
-        FLIGHT_PORT_CONTROLLER1 = flightPorts.getInt("controller1");
-        FLIGHT_PORT_CONTROLLER2 = flightPorts.getInt("controller2");
+        FLIGHT_PORT_CONTROLLERS = flightPorts.getInt("controllers");
         FLIGHT_PORT_OLLYLAKE = flightPorts.getInt("ollylake");
 
         // PostgreSQL ports
@@ -89,10 +85,6 @@ public class XdsConfig {
         SERVICE_PORT_MINIO_API = services.getInt("minio-api");
         SERVICE_PORT_MINIO_CONSOLE = services.getInt("minio-console");
         SERVICE_PORT_OLLYLAKE_HTTP = services.getInt("ollylake-http");
-        SERVICE_PORT_CONTROLLER1_HTTP = services.getInt("controller1-http");
-        SERVICE_PORT_CONTROLLER2_HTTP = services.getInt("controller2-http");
-        SERVICE_PORT_CONTROLLER1_FLIGHT = services.getInt("controller1-flight");
-        SERVICE_PORT_CONTROLLER2_FLIGHT = services.getInt("controller2-flight");
         SERVICE_PORT_OLLYLAKE_FLIGHT = services.getInt("ollylake-flight");
         SERVICE_PORT_DATABASE = services.getInt("database");
 
@@ -102,8 +94,6 @@ public class XdsConfig {
         HOST_FRONTEND = hosts.getString("frontend");
         HOST_MINIO = hosts.getString("minio");
         HOST_OLLYLAKE = hosts.getString("ollylake");
-        HOST_CONTROLLER1 = hosts.getString("controller1");
-        HOST_CONTROLLER2 = hosts.getString("controller2");
         HOST_BACKEND_DATABASE = hosts.getString("backend-database");
         HOST_CLUSTER_DATABASE = hosts.getString("cluster-database");
 

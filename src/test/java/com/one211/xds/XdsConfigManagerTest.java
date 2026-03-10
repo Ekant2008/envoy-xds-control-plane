@@ -237,7 +237,7 @@ class XdsConfigManagerTest {
     }
 
     @Test
-    void testGenerateEndpointsNotEmpty() throws Exception {
+    void testGenerateEndpointsEmptyWhenNoDynamicRegistrations() throws Exception {
         java.lang.reflect.Method method = XdsConfigManager.class.getDeclaredMethod("generateEndpoints");
         method.setAccessible(true);
 
@@ -245,35 +245,32 @@ class XdsConfigManagerTest {
         List<ClusterLoadAssignment> endpoints = (List<ClusterLoadAssignment>) method.invoke(configManager);
 
         assertNotNull(endpoints, "Endpoints should not be null");
-        assertFalse(endpoints.isEmpty(), "Endpoints should not be empty");
+        // With no dynamic registrations, generateEndpoints() returns empty.
+        // Static clusters (backend_database_tcp, etc.) have their endpoints
+        // inline in the cluster definition, not via EDS.
+        assertTrue(endpoints.isEmpty(), "Endpoints should be empty when no dynamic services are registered");
     }
 
     @Test
-    void testControllerEndpointsExist() throws Exception {
+    void testControllerEndpointsNotInStaticEDS() throws Exception {
         java.lang.reflect.Method method = XdsConfigManager.class.getDeclaredMethod("generateEndpoints");
         method.setAccessible(true);
 
         @SuppressWarnings("unchecked")
         List<ClusterLoadAssignment> endpoints = (List<ClusterLoadAssignment>) method.invoke(configManager);
 
-        // ollylake_flight_cluster endpoint removed - EDS-type clusters get endpoints dynamically via xDS
-        String[] expectedEndpoints = {
-                "backend_database_tcp",
-                "cluster_database_tcp"
-        };
+        // With dynamic-only controller topology, generateEndpoints() returns empty
+        // when no controllers have registered. Static infrastructure clusters
+        // (backend_database_tcp, cluster_database_tcp, ollylake_flight_cluster)
+        // have their endpoints inline in the cluster definition.
+        assertTrue(endpoints.isEmpty(),
+                "No EDS endpoints should exist before any dynamic registrations");
 
-        for (String expectedName : expectedEndpoints) {
-            boolean exists = endpoints.stream()
-                    .anyMatch(e -> expectedName.equals(e.getClusterName()));
-            assertTrue(exists, "Should have " + expectedName + " endpoint");
-        }
-
-        // Verify ollylake_flight_cluster does NOT have static endpoints (EDS-type cluster)
-        assertFalse(endpoints.stream().anyMatch(e -> "ollylake_flight_cluster".equals(e.getClusterName())),
-                "Should NOT have ollylake_flight_cluster static endpoint (EDS-type, managed dynamically)");
-        // Verify controller_flight_cluster does NOT have static endpoints (EDS-type cluster)
+        // Verify no controller endpoints leak into static EDS
         assertFalse(endpoints.stream().anyMatch(e -> "controller_flight_cluster".equals(e.getClusterName())),
-                "Should NOT have controller_flight_cluster static endpoint (EDS-type, managed dynamically)");
+                "Should NOT have controller_flight_cluster static endpoint");
+        assertFalse(endpoints.stream().anyMatch(e -> "sql_controller_lb_http".equals(e.getClusterName())),
+                "Should NOT have sql_controller_lb_http static endpoint");
     }
 
     @Test

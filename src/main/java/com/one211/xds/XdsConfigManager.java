@@ -36,7 +36,13 @@ import org.slf4j.Logger;
 import java.io.File;
 
 /**
- * Manages xDS configuration generation and updates
+ * Manages xDS configuration generation and updates.
+ *
+ * Controller topology is fully dynamic — no static controller instances are
+ * hardcoded here. Controllers register via /api/controllers/register and
+ * their endpoints are added to:
+ *   - sql_controller_lb_http (HTTP round-robin)
+ *   - controller_flight_cluster (Arrow Flight SQL)
  */
 public class XdsConfigManager {
 
@@ -96,7 +102,8 @@ public class XdsConfigManager {
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Generates all listeners for the configuration
+     * Generates all listeners for the configuration.
+     * Controller flight listeners use a single unified port → controller_flight_cluster.
      */
     private List<Listener> generateListeners() {
         List<Listener> listeners = new ArrayList<>();
@@ -105,10 +112,9 @@ public class XdsConfigManager {
         listeners.add(generateHttpsGatewayListener());
 
         // 2. Arrow Flight SQL TCP Listeners
-        listeners.add(generateTcpListener("flight_listener_1",
-                XdsConfig.FLIGHT_PORT_CONTROLLER1, "controller1_flight_cluster"));
-        listeners.add(generateTcpListener("flight_listener_2",
-                XdsConfig.FLIGHT_PORT_CONTROLLER2, "controller2_flight_cluster"));
+        //    Single unified listener for all controllers
+        listeners.add(generateTcpListener("flight_listener_controllers",
+                XdsConfig.FLIGHT_PORT_CONTROLLERS, "controller_flight_cluster"));
         listeners.add(generateTcpListener("flight_listener_ollylake",
                 XdsConfig.FLIGHT_PORT_OLLYLAKE, "ollylake_flight_cluster"));
 
@@ -281,7 +287,10 @@ public class XdsConfigManager {
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Generates all virtual hosts for the HTTPS gateway
+     * Generates all virtual hosts for the HTTPS gateway.
+     * Controller virtual hosts (controller1_host, controller2_host) are removed —
+     * individual controllers register their domains dynamically via /api/controllers/register.
+     * Only the controller LB virtual host (controller.one211.com) remains as static.
      */
     private List<VirtualHost> generateVirtualHosts() {
         List<VirtualHost> virtualHosts = new ArrayList<>();
@@ -311,22 +320,6 @@ public class XdsConfigManager {
                 "controller_lb_host",
                 List.of("controller.one211.com", "controller.one211.com:*"),
                 "sql_controller_lb_http",
-                XdsConfig.TIMEOUT_API_LONG,
-                corsOrigin));
-
-        // Controller 1 Direct: controller1.one211.com → sql-controller1:9006
-        virtualHosts.add(buildCorsVirtualHost(
-                "controller1_host",
-                List.of("controller1.one211.com", "controller1.one211.com:*"),
-                "sql_controller1_http",
-                XdsConfig.TIMEOUT_API_LONG,
-                corsOrigin));
-
-        // Controller 2 Direct: controller2.one211.com → sql-controller2:9007
-        virtualHosts.add(buildCorsVirtualHost(
-                "controller2_host",
-                List.of("controller2.one211.com", "controller2.one211.com:*"),
-                "sql_controller2_http",
                 XdsConfig.TIMEOUT_API_LONG,
                 corsOrigin));
 
@@ -549,12 +542,13 @@ public class XdsConfigManager {
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Generates all cluster configurations
+     * Generates all cluster configurations.
+     * Controller clusters are dynamic — no static controller1/controller2 clusters.
      */
     private List<Cluster> generateClusters() {
         List<Cluster> clusters = new ArrayList<>();
 
-        // HTTP Service Clusters
+        // HTTP Service Clusters (static infrastructure)
         clusters.add(createHttpCluster("backend_http",
                 XdsConfig.HOST_BACKEND, XdsConfig.SERVICE_PORT_BACKEND));
         clusters.add(createHttpCluster("frontend_http",
@@ -566,20 +560,13 @@ public class XdsConfigManager {
         clusters.add(createHttpCluster("ollylake_http",
                 XdsConfig.HOST_OLLYLAKE, XdsConfig.SERVICE_PORT_OLLYLAKE_HTTP));
 
-        // Controller Direct HTTP Clusters
-        clusters.add(createHttpCluster("sql_controller1_http",
-                XdsConfig.HOST_CONTROLLER1, XdsConfig.SERVICE_PORT_CONTROLLER1_HTTP));
-        clusters.add(createHttpCluster("sql_controller2_http",
-                XdsConfig.HOST_CONTROLLER2, XdsConfig.SERVICE_PORT_CONTROLLER2_HTTP));
-
-        // Controller Load Balancer (Round Robin across both controllers)
+        // Controller HTTP Load Balancer — endpoints populated entirely from ServiceRegistry
         clusters.add(createLbCluster());
 
-        // Arrow Flight SQL Clusters
-        clusters.add(createStaticCluster("controller1_flight_cluster",
-                XdsConfig.HOST_CONTROLLER1, XdsConfig.SERVICE_PORT_CONTROLLER1_FLIGHT));
-        clusters.add(createStaticCluster("controller2_flight_cluster",
-                XdsConfig.HOST_CONTROLLER2, XdsConfig.SERVICE_PORT_CONTROLLER2_FLIGHT));
+        // Controller Flight cluster — endpoints populated entirely from ServiceRegistry
+        clusters.add(createControllerFlightCluster());
+
+        // OllyLake Flight cluster (static — single instance)
         clusters.add(createStaticCluster("ollylake_flight_cluster",
                 XdsConfig.HOST_OLLYLAKE, XdsConfig.SERVICE_PORT_OLLYLAKE_FLIGHT));
 
@@ -649,35 +636,14 @@ public class XdsConfigManager {
     }
 
     /**
-     * Creates the controller load balancer cluster with initial endpoints
-     * and any dynamically added endpoints
+     * Creates the controller HTTP load balancer cluster.
+     * Endpoints come entirely from the ServiceRegistry (dynamicEndpoints).
+     * No static controller endpoints are hardcoded.
      */
     private Cluster createLbCluster() {
         LocalityLbEndpoints.Builder localityBuilder = LocalityLbEndpoints.newBuilder();
 
-        // Initial static endpoints
-        localityBuilder.addLbEndpoints(LbEndpoint.newBuilder()
-                .setEndpoint(Endpoint.newBuilder()
-                        .setAddress(Address.newBuilder()
-                                .setSocketAddress(SocketAddress.newBuilder()
-                                        .setAddress(XdsConfig.HOST_CONTROLLER1)
-                                        .setPortValue(XdsConfig.SERVICE_PORT_CONTROLLER1_HTTP)
-                                        .build())
-                                .build())
-                        .build())
-                .build());
-        localityBuilder.addLbEndpoints(LbEndpoint.newBuilder()
-                .setEndpoint(Endpoint.newBuilder()
-                        .setAddress(Address.newBuilder()
-                                .setSocketAddress(SocketAddress.newBuilder()
-                                        .setAddress(XdsConfig.HOST_CONTROLLER2)
-                                        .setPortValue(XdsConfig.SERVICE_PORT_CONTROLLER2_HTTP)
-                                        .build())
-                                .build())
-                        .build())
-                .build());
-
-        // Add any dynamically registered controller endpoints
+        // Endpoints populated entirely from dynamic registrations
         List<EndpointConfig> dynamicLbEndpoints =
                 dynamicEndpoints.get("sql_controller_lb_http");
         if (dynamicLbEndpoints != null) {
@@ -708,22 +674,64 @@ public class XdsConfigManager {
                 .build();
     }
 
+    /**
+     * Creates the unified controller flight cluster.
+     * Endpoints come entirely from the ServiceRegistry (dynamicEndpoints).
+     * No static controller endpoints are hardcoded.
+     */
+    private Cluster createControllerFlightCluster() {
+        LocalityLbEndpoints.Builder localityBuilder = LocalityLbEndpoints.newBuilder();
+
+        List<EndpointConfig> dynamicFlightEndpoints =
+                dynamicEndpoints.get("controller_flight_cluster");
+        if (dynamicFlightEndpoints != null) {
+            for (EndpointConfig ep : dynamicFlightEndpoints) {
+                localityBuilder.addLbEndpoints(LbEndpoint.newBuilder()
+                        .setEndpoint(Endpoint.newBuilder()
+                                .setAddress(Address.newBuilder()
+                                        .setSocketAddress(SocketAddress.newBuilder()
+                                                .setAddress(ep.getHost())
+                                                .setPortValue(ep.getPort())
+                                                .build())
+                                        .build())
+                                .build())
+                        .build());
+            }
+        }
+
+        return Cluster.newBuilder()
+                .setName("controller_flight_cluster")
+                .setType(Cluster.DiscoveryType.STRICT_DNS)
+                .setLbPolicy(Cluster.LbPolicy.ROUND_ROBIN)
+                .setConnectTimeout(Duration.newBuilder()
+                        .setSeconds(XdsConfig.TIMEOUT_TCP_CONNECT).build())
+                .setLoadAssignment(ClusterLoadAssignment.newBuilder()
+                        .setClusterName("controller_flight_cluster")
+                        .addEndpoints(localityBuilder.build())
+                        .build())
+                .build();
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // ENDPOINTS
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Generates endpoint configurations for dynamically registered services
+     * Generates endpoint configurations for dynamically registered services.
+     * Controller endpoints (sql_controller_lb_http, controller_flight_cluster)
+     * are handled inline in their cluster builders — this method handles
+     * all other dynamic endpoints.
      */
     private List<ClusterLoadAssignment> generateEndpoints() {
         List<ClusterLoadAssignment> endpoints = new ArrayList<>();
 
-        // Add dynamic endpoints (excluding sql_controller_lb_http which is
-        // handled inline in createLbCluster)
+        // Add dynamic endpoints (excluding controller clusters which are
+        // handled inline in createLbCluster and createControllerFlightCluster)
         for (Map.Entry<String, List<EndpointConfig>> entry : dynamicEndpoints.entrySet()) {
             String clusterName = entry.getKey();
-            if ("sql_controller_lb_http".equals(clusterName)) {
-                continue; // handled in createLbCluster
+            if ("sql_controller_lb_http".equals(clusterName)
+                    || "controller_flight_cluster".equals(clusterName)) {
+                continue; // handled in cluster builders
             }
 
             List<EndpointConfig> endpointConfigs = entry.getValue();
