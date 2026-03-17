@@ -315,13 +315,8 @@ public class XdsConfigManager {
                         .build())
                 .build());
 
-        // Controller Load Balancer: controller.one211.com → Round Robin
-        virtualHosts.add(buildCorsVirtualHost(
-                "controller_lb_host",
-                List.of("controller.one211.com", "controller.one211.com:*"),
-                "sql_controller_lb_http",
-                XdsConfig.TIMEOUT_API_LONG,
-                corsOrigin));
+        // Controller LB (controller.one211.com) is registered dynamically
+        // via /api/controllers/register — no static virtual host needed.
 
         // MinIO Console: minio.one211.com → minio:9001
         virtualHosts.add(VirtualHost.newBuilder()
@@ -947,6 +942,24 @@ public class XdsConfigManager {
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
+     * Convenience overload for programmatic registration.
+     */
+    public void registerController(String domain, String host,
+                                    int httpPort, int flightPort) throws IOException {
+        String json = String.format(
+                "{\"domain\":\"%s\",\"host\":\"%s\",\"httpPort\":%d,\"flightPort\":%d}",
+                domain, host, httpPort, flightPort);
+        registerController(json);
+    }
+
+    /**
+     * Returns dynamic endpoints (for testing/inspection).
+     */
+    public Map<String, List<EndpointConfig>> getDynamicEndpoints() {
+        return dynamicEndpoints;
+    }
+
+    /**
      * Registers a new controller with both HTTP and Flight endpoints
      */
     public void registerController(String controllerConfig) throws IOException {
@@ -1007,25 +1020,26 @@ public class XdsConfigManager {
     }
 
     private void addEndpointToCluster(String clusterName, String host, int port) {
-        List<EndpointConfig> endpoints = dynamicEndpoints.getOrDefault(
-                clusterName, new ArrayList<>());
-
-        boolean found = false;
-        List<EndpointConfig> updated = new ArrayList<>();
-        for (EndpointConfig ep : endpoints) {
-            if (ep.getHost().equals(host)) {
-                updated.add(new EndpointConfig(clusterName, host, port));
-                found = true;
-            } else {
-                updated.add(ep);
+        dynamicEndpoints.compute(clusterName, (key, endpoints) -> {
+            if (endpoints == null) {
+                endpoints = new ArrayList<>();
             }
-        }
 
-        if (!found) {
-            updated.add(new EndpointConfig(clusterName, host, port));
-        }
+            // Dedup by host+port (not just host)
+            boolean found = false;
+            for (EndpointConfig ep : endpoints) {
+                if (ep.getHost().equals(host) && ep.getPort() == port) {
+                    found = true;
+                    break;
+                }
+            }
 
-        dynamicEndpoints.put(clusterName, updated);
+            if (!found) {
+                endpoints.add(new EndpointConfig(clusterName, host, port));
+            }
+
+            return endpoints;
+        });
     }
 
     /**
@@ -1047,18 +1061,12 @@ public class XdsConfigManager {
     }
 
     private void removeEndpointFromCluster(String clusterName, String host) {
-        List<EndpointConfig> endpoints = dynamicEndpoints.get(clusterName);
-        if (endpoints != null) {
+        dynamicEndpoints.computeIfPresent(clusterName, (key, endpoints) -> {
             List<EndpointConfig> filtered = endpoints.stream()
                     .filter(ep -> !ep.getHost().equals(host))
                     .collect(Collectors.toList());
-
-            if (filtered.isEmpty()) {
-                dynamicEndpoints.remove(clusterName);
-            } else {
-                dynamicEndpoints.put(clusterName, filtered);
-            }
-        }
+            return filtered.isEmpty() ? null : filtered;
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════════════
