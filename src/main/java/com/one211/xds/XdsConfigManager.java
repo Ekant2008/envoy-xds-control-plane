@@ -315,6 +315,25 @@ public class XdsConfigManager {
                         .build())
                 .build());
 
+        // Wildcard: *.controller.one211.com → sql_controller_lb_http
+        // Any {cluster}.controller.one211.com request is routed to the controller LB.
+        // The HostAwareLoginService extracts the cluster from the first subdomain
+        // of the Host header (e.g. myteam.controller.one211.com → cluster=myteam).
+        // No cert changes needed for new clusters — *.controller.one211.com covers all.
+        virtualHosts.add(VirtualHost.newBuilder()
+                .setName("controller_wildcard_host")
+                .addDomains("*.controller.one211.com")
+                .addDomains("*.controller.one211.com:*")
+                .addRoutes(Route.newBuilder()
+                        .setMatch(RouteMatch.newBuilder().setPrefix("/").build())
+                        .setRoute(RouteAction.newBuilder()
+                                .setCluster("sql_controller_lb_http")
+                                .setTimeout(Duration.newBuilder()
+                                        .setSeconds(XdsConfig.TIMEOUT_API_LONG).build())
+                                .build())
+                        .build())
+                .build());
+
         // Controller LB (controller.one211.com) is registered dynamically
         // via /api/controllers/register — no static virtual host needed.
 
