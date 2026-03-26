@@ -26,6 +26,10 @@ import io.envoyproxy.envoy.extensions.filters.network.http_connection_manager.v3
 import io.envoyproxy.envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext;
 import io.envoyproxy.envoy.extensions.transport_sockets.tls.v3.CommonTlsContext;
 import io.envoyproxy.envoy.extensions.transport_sockets.tls.v3.TlsCertificate;
+import io.envoyproxy.envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication;
+import io.envoyproxy.envoy.extensions.filters.http.jwt_authn.v3.JwtProvider;
+import io.envoyproxy.envoy.extensions.filters.http.jwt_authn.v3.JwtRequirement;
+import io.envoyproxy.envoy.extensions.filters.http.jwt_authn.v3.RequirementRule;
 import io.envoyproxy.envoy.type.v3.*;
 import io.envoyproxy.envoy.type.matcher.v3.StringMatcher;
 import com.google.protobuf.Duration;
@@ -131,6 +135,115 @@ public class XdsConfigManager {
     }
 
     /**
+     * Reads the JWKS JSON from classpath or mounted file for jwt_authn configuration
+     */
+    private String loadJwksJson() {
+        // Try mounted path first (docker volume)
+        java.nio.file.Path mountedPath = java.nio.file.Paths.get("/app/keys/jwks.json");
+        if (java.nio.file.Files.exists(mountedPath)) {
+            try {
+                return java.nio.file.Files.readString(mountedPath);
+            } catch (Exception e) {
+                logger.warn("Could not read JWKS from /app/keys/jwks.json: {}", e.getMessage());
+            }
+        }
+        // Fallback: classpath resource
+        try (java.io.InputStream is = getClass().getClassLoader().getResourceAsStream("jwks.json")) {
+            if (is != null) {
+                return new String(is.readAllBytes());
+            }
+        } catch (Exception e) {
+            logger.warn("Could not read JWKS from classpath: {}", e.getMessage());
+        }
+        throw new RuntimeException("JWKS not found at /app/keys/jwks.json or classpath:jwks.json");
+    }
+
+    /**
+     * Builds the jwt_authn HTTP filter for validating RS256 JWTs signed by one211-backend
+     */
+    private HttpFilter buildJwtAuthnFilter() {
+        String jwksJson = loadJwksJson();
+
+        JwtProvider provider = JwtProvider.newBuilder()
+                .setIssuer("one211-backend")
+                .setLocalJwks(io.envoyproxy.envoy.config.core.v3.DataSource.newBuilder()
+                        .setInlineString(jwksJson)
+                        .build())
+                .setForward(true)
+                .setPayloadInMetadata("jwt_payload")
+                .build();
+
+        JwtAuthentication jwtAuth = JwtAuthentication.newBuilder()
+                .setBypassCorsPreflight(true)
+                .putProviders("one211_backend", provider)
+                .addRules(RequirementRule.newBuilder()
+                        .setMatch(io.envoyproxy.envoy.config.route.v3.RouteMatch.newBuilder()
+                                .setPrefix("/api/login").build())
+                        .setRequires(JwtRequirement.newBuilder()
+                                .setAllowMissingOrFailed(com.google.protobuf.Empty.getDefaultInstance())
+                                .build())
+                        .build())
+                .addRules(RequirementRule.newBuilder()
+                        .setMatch(io.envoyproxy.envoy.config.route.v3.RouteMatch.newBuilder()
+                                .setPrefix("/api/signup").build())
+                        .setRequires(JwtRequirement.newBuilder()
+                                .setAllowMissingOrFailed(com.google.protobuf.Empty.getDefaultInstance())
+                                .build())
+                        .build())
+                .addRules(RequirementRule.newBuilder()
+                        .setMatch(io.envoyproxy.envoy.config.route.v3.RouteMatch.newBuilder()
+                                .setPrefix("/api/beta-registration").build())
+                        .setRequires(JwtRequirement.newBuilder()
+                                .setAllowMissingOrFailed(com.google.protobuf.Empty.getDefaultInstance())
+                                .build())
+                        .build())
+                .addRules(RequirementRule.newBuilder()
+                        .setMatch(io.envoyproxy.envoy.config.route.v3.RouteMatch.newBuilder()
+                                .setPrefix("/api/reset-password").build())
+                        .setRequires(JwtRequirement.newBuilder()
+                                .setAllowMissingOrFailed(com.google.protobuf.Empty.getDefaultInstance())
+                                .build())
+                        .build())
+                .addRules(RequirementRule.newBuilder()
+                        .setMatch(io.envoyproxy.envoy.config.route.v3.RouteMatch.newBuilder()
+                                .setPrefix("/api/access/resolve").build())
+                        .setRequires(JwtRequirement.newBuilder()
+                                .setAllowMissingOrFailed(com.google.protobuf.Empty.getDefaultInstance())
+                                .build())
+                        .build())
+                .addRules(RequirementRule.newBuilder()
+                        .setMatch(io.envoyproxy.envoy.config.route.v3.RouteMatch.newBuilder()
+                                .setPrefix("/actuator").build())
+                        .setRequires(JwtRequirement.newBuilder()
+                                .setAllowMissingOrFailed(com.google.protobuf.Empty.getDefaultInstance())
+                                .build())
+                        .build())
+                .addRules(RequirementRule.newBuilder()
+                        .setMatch(io.envoyproxy.envoy.config.route.v3.RouteMatch.newBuilder()
+                                .setPrefix("/api/").build())
+                        .setRequires(JwtRequirement.newBuilder()
+                                .setProviderName("one211_backend")
+                                .build())
+                        .build())
+                .addRules(RequirementRule.newBuilder()
+                        .setMatch(io.envoyproxy.envoy.config.route.v3.RouteMatch.newBuilder()
+                                .setPrefix("/").build())
+                        .setRequires(JwtRequirement.newBuilder()
+                                .setAllowMissingOrFailed(com.google.protobuf.Empty.getDefaultInstance())
+                                .build())
+                        .build())
+                .build();
+
+        return HttpFilter.newBuilder()
+                .setName("envoy.filters.http.jwt_authn")
+                .setTypedConfig(Any.newBuilder()
+                        .setTypeUrl("type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication")
+                        .setValue(jwtAuth.toByteString())
+                        .build())
+                .build();
+    }
+
+    /**
      * Generates the HTTPS gateway listener with TLS termination and RDS
      */
     private Listener generateHttpsGatewayListener() {
@@ -164,6 +277,7 @@ public class XdsConfigManager {
                 .addUpgradeConfigs(HttpConnectionManager.UpgradeConfig.newBuilder()
                         .setUpgradeType("websocket")
                         .build())
+                .addHttpFilters(buildJwtAuthnFilter())
                 .addHttpFilters(HttpFilter.newBuilder()
                         .setName("envoy.filters.http.router")
                         .setTypedConfig(Any.newBuilder()
